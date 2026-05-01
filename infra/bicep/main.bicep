@@ -96,6 +96,9 @@ param workerAPIEnabled bool = true
 @description('Queue name for worker tasks')
 param workerQueueName string = 'contentflow-execution-requests'
 
+@description('SKU for Document Understanding (DocumentUnderstanding) service - standard or free')
+param documentUnderstandingSku string = 'S0'
+
 // ========== DEPLOYMENT MODE VALIDATION ==========
 var isBasic = deploymentMode == 'basic'
 var isAILZIntegrated = deploymentMode == 'ailz-integrated'
@@ -157,6 +160,7 @@ var containerAppsEnvironmentName = 'cae-${resourceToken}'
 var apiContainerAppName = 'api-${resourceToken}'
 var workerContainerAppName = 'worker-${resourceToken}'
 var webContainerAppName = 'web-${resourceToken}'
+var documentUnderstandingName = 'docint-${resourceToken}'
 
 // ========== MODULES DEPLOYMENT =========
 // ***************************************
@@ -425,6 +429,16 @@ module appConfigStoreKeys 'modules/app-config-store-keys.bicep' = {
       }
       {
         contentType: 'text/plain'
+        name: 'contentflow.common.DOCUMENT_UNDERSTANDING_ENDPOINT'
+        value: documentUnderstanding.properties.endpoint
+      }
+      {
+        contentType: 'text/plain'
+        name: 'contentflow.common.DOCUMENT_UNDERSTANDING_KEY'
+        value: documentUnderstanding.listKeys().key1
+      }
+      {
+        contentType: 'text/plain'
         name: 'sentinel'
         value: '1'
       }
@@ -471,6 +485,34 @@ module containerAppsEnvironment 'modules/container-apps-environment.bicep' = {
     publicNetworkAccess: isAILZIntegrated ? 'Disabled' : 'Enabled'
     tags: tags
   }
+}
+
+// ========== DOCUMENT UNDERSTANDING ==========
+resource documentUnderstanding 'Microsoft.CognitiveServices/accounts@2023-05-01' = {
+  name: documentUnderstandingName
+  location: location
+  kind: 'DocumentUnderstanding'
+  sku: {
+    name: documentUnderstandingSku
+  }
+  identity: {
+    type: 'UserAssigned'
+    userAssignedIdentities: {
+      '${userAssignedIdentity.outputs.resourceId}': {}
+    }
+  }
+  properties: {
+    apiProperties: {
+      aadAuthSupport: 'true'
+    }
+    customSubDomainName: documentUnderstandingName
+    networkAcls: isAILZIntegrated ? {
+      defaultAction: 'Deny'
+      virtualNetworkRules: []
+    } : null
+    publicNetworkAccess: isAILZIntegrated ? 'Disabled' : 'Enabled'
+  }
+  tags: tags
 }
 
 // ========== AI FOUNDRY HUB AND PROJECT ==========
@@ -630,6 +672,10 @@ output MANAGED_IDENTITY_PRINCIPAL_ID string = userAssignedIdentity.outputs.princ
 output AZURE_AI_FOUNDRY_LOCATION string = aiFoundry.outputs.location
 output AI_PROJECT_NAME string = aiFoundry.outputs.aiProjectName
 output AI_SERVICES_NAME string = aiFoundry.outputs.aiServicesName
+
+// Document Understanding outputs
+output DOCUMENT_UNDERSTANDING_ENDPOINT string = documentUnderstanding.properties.endpoint
+output DOCUMENT_UNDERSTANDING_NAME string = documentUnderstanding.name
 
 // Network outputs
 output VNET_RESOURCE_ID string = isAILZIntegrated ? existingVnetResourceId : ''
